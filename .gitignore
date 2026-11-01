@@ -1,0 +1,38 @@
+# 密钥与本地配置
+.env
+.env.*
+!.env.example
+*.key
+*.pem
+
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+.venv/
+venv/
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+
+# 运行时数据
+data/
+*.db
+*.db-wal
+*.db-shm
+desktop_memory.db*
+tts_cache/
+*.log
+
+# Live2D 模型（按原作者授权要求，不随仓库分发）
+web/live2d/models/*
+!web/live2d/models/README.md
+
+# 本地临时文件
+web/live2d/_tmp/
+
+# 编辑器 / 系统
+.idea/
+.vscode/
+.DS_Store
+Thumbs.db
