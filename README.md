@@ -101,13 +101,16 @@ web/live2d/models/jinyu/大肥鱼.model3.json
 - 音频只读一次，不落盘（TTS 缓存除外）。
 - `.env`、数据库、模型文件都不入版本库。
 
-## 第三方组件
+## 第三方组件与致谢
 
 - Live2D Cubism Core：归 Live2D Inc. 所有，使用需遵守 Live2D 许可。
 - PixiJS：MIT License。
 - pixi-live2d-display：MIT License。
+- **[YVFENGXS/Jinyv-memory](https://github.com/YVFENGXS/Jinyv-memory)** —— `jinyu_memory/core/` 的记忆核心来自该仓库（MIT）；其分层记忆与检索设计参考过 [SeekMemory](https://github.com/NeverENG/SeekMemory) 与 dsh-fish，工程实践参考过 [AstrBot](https://github.com/AstrBotDevs/AstrBot)，均未复制代码。
+- **[opencode-acp](https://github.com/ranxianglei/opencode-acp)**、**[billion-context-pi](https://github.com/ranxianglei/billion-context-pi)**、**[billion-context](https://github.com/ranxianglei/billion-context)** —— 长会话上下文压缩思路参考（模型驱动、增量分层压缩），未复制代码。
+- **DeepSeek-chan（大肥鱼）Live2D 模型** —— 原画 / 拆分：神宫凉子，Live2D 建模：霓虹猫_NeonNeko；模型不随仓库分发，版权与使用条件归原作者。
 
-各自的具体条款以对应项目的 LICENSE 为准。
+各自的具体条款以对应项目的 LICENSE 为准；本仓库只借鉴设计思路，未复制上述参考项目的源码。
 
 ## License
 
