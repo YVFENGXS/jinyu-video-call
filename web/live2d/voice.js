@@ -173,6 +173,15 @@
     });
   }
 
+  // 只关掉自己占用的那条麦克风流，避免误停别处的录音
+  function dropMic(mic) {
+    if (!mic || stream !== mic) {
+      return;
+    }
+    mic.getTracks().forEach(function (track) { track.stop(); });
+    stream = null;
+  }
+
   function blobToBase64(blob) {
     return new Promise(function (resolve, reject) {
       var reader = new FileReader();
@@ -249,6 +258,8 @@
     setState("正在打开免提…", "loading");
     ensureMic().then(function (mic) {
       if (!handsFree) {
+        // 麦克风还没拿到用户就关了免提，别让麦克风一直开着
+        dropMic(mic);
         return;
       }
       var Ctx = window.AudioContext || window.webkitAudioContext;
@@ -592,6 +603,8 @@
 
     ensureMic().then(function (mic) {
       if (!recording) {
+        // 松开得比麦克风授权还快：别留下一条一直开着的麦克风
+        dropMic(mic);
         return;
       }
       var mime = pickMime();
