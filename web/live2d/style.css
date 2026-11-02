@@ -638,6 +638,14 @@ body {
   background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%23e9f2ff' stroke-width='1.7' stroke-linecap='round' stroke-linejoin='round'%3E%3Crect x='9' y='3' width='6' height='10.5' rx='3'/%3E%3Cpath d='M5.5 11a6.5 6.5 0 0 0 13 0M12 17.5V21'/%3E%3C/svg%3E");
 }
 
+.dock-hands::before {
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%23e9f2ff' stroke-width='1.7' stroke-linecap='round' stroke-linejoin='round'%3E%3Crect x='9' y='3' width='6' height='10.5' rx='3'/%3E%3Cpath d='M5.5 11a6.5 6.5 0 0 0 13 0M12 17.5V21'/%3E%3Cpath d='M2.8 8.6a9.6 9.6 0 0 0 18.4 0' opacity='.55'/%3E%3C/svg%3E");
+}
+
+.dock-hands[aria-pressed="true"] {
+  animation: breathe 2.4s ease-in-out infinite;
+}
+
 .dock-replay::before {
   background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%23e9f2ff' stroke-width='1.7' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M4.2 12a7.8 7.8 0 1 0 2.6-5.9'/%3E%3Cpath d='M4 4.8v4.8h4.8'/%3E%3C/svg%3E");
 }
@@ -810,14 +818,14 @@ body {
 
   .call-dock {
     bottom: 12px;
-    gap: 8px;
-    padding: 8px 10px;
+    gap: 6px;
+    padding: 8px;
     border-radius: 22px;
   }
 
   .dock-btn {
-    width: 54px;
-    height: 54px;
+    width: 50px;
+    height: 50px;
     border-radius: 17px;
     font-size: 9px;
   }
@@ -829,6 +837,6 @@ body {
   }
 
   .dock-talk {
-    width: 64px;
+    width: 58px;
   }
 }

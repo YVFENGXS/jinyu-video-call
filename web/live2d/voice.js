@@ -11,6 +11,7 @@
   ];
 
   var talkBtn = document.getElementById("voice-talk");
+  var handsBtn = document.getElementById("voice-handsfree");
   var replayBtn = document.getElementById("voice-replay");
   var sendBtn = document.getElementById("voice-send");
   var stateEl = document.getElementById("voice-state");
@@ -39,6 +40,21 @@
   var lastUrls = [];
   var firstMs = 0;
   var pendingIncoming = [];
+
+  // 免提：麦克风一直开着，检测到人声自动录一句，停顿后自动发送
+  var handsFree = false;
+  var vadTimer = null;
+  var audioCtx = null;
+  var analyser = null;
+  var vadData = null;
+  var vadHits = 0;
+  var vadSilenceAt = 0;
+  var hfCooldownUntil = 0;
+  var discardRecord = false;
+  var HF_THRESHOLD = 0.035;      // 时域 RMS 阈值，安静房间约 0.01，正常说话约 0.08+
+  var HF_SILENCE_MS = 900;       // 停顿多久算说完
+  var HF_COOLDOWN_MS = 700;      // 瑾瑜说完后的静默，避免自己的尾音被当成新一句
+  var HF_TICK_MS = 80;
 
   // 和读屏/摄像头共用同一个会话键，服务端才能把最近一帧画面带进通话回答
   function sessionId() {
@@ -169,6 +185,126 @@
     });
   }
 
+  // ---- 免提：用 AnalyserNode 的时域数据算音量，检测到人声就自动录音 ----
+  function vadLevel() {
+    if (!analyser || !vadData) {
+      return 0;
+    }
+    analyser.getByteTimeDomainData(vadData);
+    var sum = 0;
+    for (var i = 0; i < vadData.length; i += 1) {
+      var v = (vadData[i] - 128) / 128;
+      sum += v * v;
+    }
+    return Math.sqrt(sum / vadData.length);
+  }
+
+  function vadTick() {
+    if (!handsFree || !analyser) {
+      return;
+    }
+    var now = performance.now();
+    // 瑾瑜在说话 / 正在请求时完全不收声，避免把它自己的尾音当成人话
+    if (busy || playing || queue.length || pendingIncoming.length ||
+        now < hfCooldownUntil) {
+      vadHits = 0;
+      vadSilenceAt = 0;
+      return;
+    }
+    var level = vadLevel();
+    if (recording) {
+      if (level >= HF_THRESHOLD) {
+        vadSilenceAt = 0;
+      } else if (!vadSilenceAt) {
+        vadSilenceAt = now;
+      } else if (now - vadSilenceAt >= HF_SILENCE_MS) {
+        vadSilenceAt = 0;
+        stopRecord();
+      }
+      return;
+    }
+    if (level >= HF_THRESHOLD) {
+      vadHits += 1;
+      if (vadHits >= 2) {
+        vadHits = 0;
+        startRecord(true);
+      }
+    } else {
+      vadHits = 0;
+    }
+  }
+
+  function hfStart() {
+    if (handsFree) {
+      return;
+    }
+    if (!window.MediaRecorder) {
+      fail("当前浏览器不支持录音（需要 localhost 或 HTTPS）");
+      return;
+    }
+    handsFree = true;
+    if (handsBtn) {
+      handsBtn.setAttribute("aria-pressed", "true");
+    }
+    setState("正在打开免提…", "loading");
+    ensureMic().then(function (mic) {
+      if (!handsFree) {
+        return;
+      }
+      var Ctx = window.AudioContext || window.webkitAudioContext;
+      if (!Ctx) {
+        throw new Error("当前浏览器不支持音频分析");
+      }
+      audioCtx = new Ctx();
+      analyser = audioCtx.createAnalyser();
+      analyser.fftSize = 512;
+      analyser.smoothingTimeConstant = 0.4;
+      vadData = new Uint8Array(analyser.fftSize);
+      audioCtx.createMediaStreamSource(mic).connect(analyser);
+      vadHits = 0;
+      vadSilenceAt = 0;
+      hfCooldownUntil = 0;
+      if (audioCtx.state === "suspended" && audioCtx.resume) {
+        audioCtx.resume();
+      }
+      vadTimer = window.setInterval(vadTick, HF_TICK_MS);
+      setState("免提已开：直接说话，瑾瑜会自己接", "ready");
+    }).catch(function (error) {
+      hfStop(null);
+      fail("麦克风不可用：" + (error && error.message ? error.message : error));
+    });
+  }
+
+  function hfStop(message) {
+    handsFree = false;
+    if (handsBtn) {
+      handsBtn.setAttribute("aria-pressed", "false");
+    }
+    if (vadTimer) {
+      window.clearInterval(vadTimer);
+      vadTimer = null;
+    }
+    vadHits = 0;
+    vadSilenceAt = 0;
+    analyser = null;
+    vadData = null;
+    if (audioCtx) {
+      try { audioCtx.close(); } catch (error) {}
+      audioCtx = null;
+    }
+    if (recording) {
+      discardRecord = true;
+      stopRecord();
+    }
+    if (stream) {
+      stream.getTracks().forEach(function (track) { track.stop(); });
+      stream = null;
+    }
+    if (message) {
+      setState(message, "idle");
+    }
+  }
+
   function stopPlayback() {
     queue = [];
     playing = false;
@@ -187,7 +323,10 @@
     if (!url) {
       if (wasSpeaking) {
         wasSpeaking = false;
-        setState("说完 · 首句 " + firstMs + " ms", "ready");
+        hfCooldownUntil = performance.now() + HF_COOLDOWN_MS;
+        setState(handsFree
+          ? "免提已开：直接说话，瑾瑜会自己接"
+          : "说完 · 首句 " + firstMs + " ms", "ready");
       }
       return;
     }
@@ -431,7 +570,7 @@
     });
   }
 
-  function startRecord() {
+  function startRecord(auto) {
     if (busy || recording) {
       return;
     }
@@ -441,8 +580,10 @@
     }
     recording = true;
     startedAt = Date.now();
-    talkBtn.setAttribute("aria-pressed", "true");
-    setState("录音中… 松开就发送", "recording");
+    if (!auto) {
+      talkBtn.setAttribute("aria-pressed", "true");
+    }
+    setState(auto ? "免提录音中… 说完停一下" : "录音中… 松开就发送", "recording");
     stopPlayback();
     // 趁说话这几秒先补一帧，松开时服务端就能拿到当前画面而不是旧帧
     if (window.JinyuScreen && window.JinyuScreen.scanNow) {
@@ -473,6 +614,9 @@
     }).catch(function (error) {
       recording = false;
       talkBtn.setAttribute("aria-pressed", "false");
+      if (handsFree) {
+        hfStop(null);
+      }
       fail("麦克风不可用：" + (error && error.message ? error.message : error));
     });
   }
@@ -484,6 +628,7 @@
     }
     if (!recorder || recorder.state === "inactive") {
       recording = false;
+      discardRecord = false;
       talkBtn.setAttribute("aria-pressed", "false");
       return;
     }
@@ -501,11 +646,16 @@
     var blob = new Blob(kept, { type: mime.split(";")[0] || "audio/webm" });
     chunks = [];
     recorder = null;
-    var seconds = Date.now() - startedAt;
-    if (seconds < MIN_RECORD_MS || blob.size < 512) {
-      setState("太短了：按住按钮多说一会儿", "idle");
+    if (discardRecord) {
+      discardRecord = false;
       return;
     }
+    var seconds = Date.now() - startedAt;
+    if (seconds < MIN_RECORD_MS || blob.size < 512) {
+      setState(handsFree ? "太短了，再说一句" : "太短了：按住按钮多说一会儿", "idle");
+      return;
+    }
+    hfCooldownUntil = performance.now() + HF_COOLDOWN_MS;
     blobToBase64(blob).then(function (base64) {
       sendTurn({ audio: base64, mime: mime.split(";")[0] }, "voice");
     }).catch(function (error) {
@@ -530,7 +680,11 @@
     try {
       talkBtn.setPointerCapture(event.pointerId);
     } catch (error) {}
-    startRecord();
+    if (handsFree) {
+      // 按住说话优先：先退掉免提，避免两套录音同时抢麦克风
+      hfStop(null);
+    }
+    startRecord(false);
   });
 
   ["pointerup", "pointercancel", "lostpointercapture"].forEach(function (name) {
@@ -554,6 +708,23 @@
     pump();
   });
 
+  if (handsBtn) {
+    handsBtn.addEventListener("click", function () {
+      if (handsFree) {
+        hfStop("免提已关闭");
+      } else {
+        hfStart();
+      }
+    });
+  }
+
+  // 页面切到后台就关掉免提，避免在用户看不到的时候一直开着麦克风
+  document.addEventListener("visibilitychange", function () {
+    if (document.hidden && handsFree) {
+      hfStop("页面切到后台，免提已关闭");
+    }
+  });
+
   sendBtn.addEventListener("click", sendText);
 
   inputEl.addEventListener("keydown", function (event) {
@@ -564,8 +735,17 @@
   });
 
   window.addEventListener("beforeunload", function () {
+    if (vadTimer) {
+      window.clearInterval(vadTimer);
+      vadTimer = null;
+    }
+    if (audioCtx) {
+      try { audioCtx.close(); } catch (error) {}
+      audioCtx = null;
+    }
     if (stream) {
       stream.getTracks().forEach(function (track) { track.stop(); });
+      stream = null;
     }
   });
 
