@@ -968,7 +968,7 @@ def default_audience(sid: str) -> str:
     return ""
 
 
-SOURCE_LABELS = {"qq": "QQ", "desk": "桌宠", "video": "视频通话"}
+SOURCE_LABELS = {"qq": "QQ", "desk": "桌宠", "video": "视频通话", "room": "房间"}
 
 # 舞台指令（通话页/桌宠用）不该回到共享记忆：QQ 不认识 [[表情:..]]，会当正文发出去，
 # 模型也会照着历史继续写。渲染/归档时把这类标记剥掉，QQ 自己的 [[face:..]] 不动。

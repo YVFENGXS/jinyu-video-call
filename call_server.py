@@ -226,6 +226,15 @@ PROACTIVE_LOCK = asyncio.Semaphore(1)
 VOICE_STYLE = ("（现在是浏览器语音通话：用口语化的短句回答，最多三句，"
                "不要表情符号，不要写括号里的动作。）\n")
 
+# 房间（3D）对话：同一套语音链路，但换掉「通话」措辞与舞台候选。
+# 房间的表情是 8 个英文名（对应 aiBody 的表情层），与 Live2D 模型的中文表情不通用。
+ROOM_EXPRESSIONS = ("neutral", "happy", "smile", "sad", "angry", "surprised",
+                    "shy", "thinking")
+ROOM_STYLE = ("（现在在 3D 房间里面对面说话：用口语化的短句回答，最多三句，"
+              "不要表情符号，不要写括号里的动作。想换表情可以写 [[表情:happy]]，"
+              "只能用 neutral/happy/smile/sad/angry/surprised/shy/thinking 这几个英文名。"
+              "口型由系统随语音驱动，不用你调。）\n")
+
 # ---- M2 舞台控制：服务器 AI 用指令驱动 Live2D ----
 MODEL_JSON = WEB_DIR / "models" / "jinyu" / "大肥鱼.model3.json"
 MOTION_LABELS = {
@@ -371,10 +380,17 @@ def stage_brief():
             "主人看不到方括号里的内容。）")
 
 
-def parse_stage(reply):
-    """把回答里的舞台指令抽出来：返回 (去掉指令的正文, 指令字典)。"""
+def parse_stage(reply, extra_expr=()):
+    """把回答里的舞台指令抽出来：返回 (去掉指令的正文, 指令字典)。
+
+    extra_expr：额外允许的表情名（房间用 8 个英文名，Live2D 候选表里没有）。
+    """
     stage = {"expr": [], "off": [], "motion": "", "reset": False, "idle": False, "head": {}}
     ignored = []
+    extra = {str(x).strip() for x in (extra_expr or ()) if str(x).strip()}
+
+    def expr_ok(name):
+        return name in STAGE_EXPRESSIONS or name in extra
 
     def take(match):
         kind, name = match.group(1), match.group(2).strip()
@@ -388,7 +404,7 @@ def parse_stage(reply):
             elif name:
                 ignored.append(name)
         elif kind == "收起":
-            if name in STAGE_EXPRESSIONS:
+            if expr_ok(name):
                 if name not in stage["off"]:
                     stage["off"].append(name)
             elif name:
@@ -419,7 +435,7 @@ def parse_stage(reply):
                 part = part.strip()
                 if not part:
                     continue
-                if part in STAGE_EXPRESSIONS:
+                if expr_ok(part):
                     if part not in stage["expr"]:
                         stage["expr"].append(part)
                 else:
@@ -430,7 +446,7 @@ def parse_stage(reply):
 
     def take_bare(match):
         name = match.group(1).strip()
-        if name in STAGE_EXPRESSIONS:
+        if expr_ok(name):
             if name not in stage["expr"]:
                 stage["expr"].append(name)
         elif name in STAGE_MOTIONS:
@@ -478,8 +494,10 @@ async def host_chat(prompt, text, source):
 MW, LLM_MODE = build_middleware()
 
 
-def session_for_chat():
-    return MW.session_identity(BASE_SESSION, CID, EPOCH_SECONDS, flush_timeout=EPOCH_FLUSH)
+def session_for_chat(source="video"):
+    """本地模型直连时的会话标识。房间用独立后缀，别和视频通话的记忆混在一条车道。"""
+    base = BASE_SESSION + "#room" if source == "room" else BASE_SESSION
+    return MW.session_identity(base, CID, EPOCH_SECONDS, flush_timeout=EPOCH_FLUSH)
 
 
 def session_id(body):
@@ -807,14 +825,21 @@ async def proactive_reply(sid, view):
     return text[:120], stage, "speak"
 
 
-async def voice_reply(text, sid="", view=""):
-    """一句话 → (回答文本, 模式)。真实模型失败时退回本地兜底，不让通话中断。"""
-    prompt = (view_note(sid, view) + stage_state_note(sid) + proactive_note(sid)
-              + VOICE_STYLE + stage_brief() + "\n主人说：" + text)
+async def voice_reply(text, sid="", view="", source="video"):
+    """一句话 → (回答文本, 模式)。真实模型失败时退回本地兜底，不让通话中断。
+
+    source="room" 时换成房间措辞/表情候选，其余（记忆、身体工具）走同一条宿主链路。
+    """
+    if source == "room":
+        # 房间没有 Live2D 舞台状态/画面读数，别把这些提示塞进去让模型说错窗口
+        prompt = ROOM_STYLE + "\n主人说：" + text
+    else:
+        prompt = (view_note(sid, view) + stage_state_note(sid) + proactive_note(sid)
+                  + VOICE_STYLE + stage_brief() + "\n主人说：" + text)
     if host_configured():
         try:
             async with session_lock(sid):
-                reply = await host_chat(prompt, text, "video")
+                reply = await host_chat(prompt, text, source)
         except Exception as exc:              # noqa: BLE001
             print(f"[call] host error: {type(exc).__name__}: {exc}")
             return "……瑾瑜这边刚刚走神了，再说一遍好不好。", "error"
@@ -824,9 +849,9 @@ async def voice_reply(text, sid="", view=""):
     try:
         async with session_lock(sid):
             def run():
-                chat_sid = session_for_chat()
+                chat_sid = session_for_chat(source)
                 return MW.chat(prompt, PERSONA, chat_sid, CID,
-                               store_input=text, source="video")
+                               store_input=text, source=source)
 
             reply = str(await asyncio.to_thread(run) or "").strip()
     except Exception as exc:              # noqa: BLE001
@@ -1050,6 +1075,10 @@ async def call_turn(request: Request):
         return err(400, "请求不是 JSON")
     sid = session_id(body)
     touch(sid)
+    # 房间是独立来源：换措辞/表情候选，并把 source 透传到宿主（记忆标记用）
+    source = str(body.get("source") or "video").strip().lower()
+    if source not in ("video", "room"):
+        source = "video"
     text = str(body.get("text") or "").strip()[:MAX_CALL_TEXT]
     asr = {"text": text, "mode": "text", "ms": 0}
 
@@ -1067,21 +1096,21 @@ async def call_turn(request: Request):
     if not text:
         return err(400, "缺少 text 或 audio")
 
-    print(f"[call] 主人：{_fingerprint(text)}", flush=True)
+    print(f"[call] 主人（{source}）：{_fingerprint(text)}", flush=True)
     LAST_USER[sid] = time.time()
     remember_talk(sid, text, "")
     view = str(body.get("view") or "").strip().lower()[:8]
     llm_started = time.perf_counter()
-    reply, llm_mode = await voice_reply(text, sid, view)
+    reply, llm_mode = await voice_reply(text, sid, view, source=source)
     LAST_SAY.pop(sid, None)
     llm_ms = int((time.perf_counter() - llm_started) * 1000)
 
-    reply, stage = parse_stage(reply)
+    reply, stage = parse_stage(reply, ROOM_EXPRESSIONS if source == "room" else ())
     if PASS_RE.search(reply) or not reply.strip():
         # [[pass]]：这一轮瑾瑜把话说到 QQ/桌宠了，通话这边不出声，也不算失败
         print("[call] 瑾瑜：这一轮在别的窗口说话", flush=True)
         return {
-            "ok": True, "session": sid, "asr": text, "reply": "", "pass": True,
+            "ok": True, "session": sid, "source": source, "asr": text, "reply": "", "pass": True,
             "stage": stage,
             "mode": {"asr": asr.get("mode"), "llm": llm_mode, "tts": "skipped"},
             "ms": {"asr": asr.get("ms", 0), "llm": llm_ms, "tts": 0,
@@ -1090,7 +1119,9 @@ async def call_turn(request: Request):
         }
     print(f"[call] 瑾瑜：{_fingerprint(reply)}", flush=True)
     remember_talk(sid, "", reply)
-    note_stage(sid, stage)
+    # 房间回合的表情只对这一次请求放行，不写进 Live2D 舞台状态缓存（表情名不是一套）
+    if source != "room":
+        note_stage(sid, stage)
     first, rest = cv.split_sentences(cv.speakable(reply))
     if not first:
         return err(502, "回答为空")
@@ -1098,6 +1129,7 @@ async def call_turn(request: Request):
     return {
         "ok": True,
         "session": sid,
+        "source": source,
         "asr": text,
         "reply": reply,
         "stage": stage,
