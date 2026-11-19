@@ -49,7 +49,7 @@ def _cli(flag, default):
         return default
 
 
-CORE_DIR = Path(_cli("--core-dir", os.environ.get("RP_CORE_DIR", str(ROOT / "jinyu_memory" / "core"))))
+CORE_DIR = Path(_cli("--core-dir", os.environ.get("RP_CORE_DIR", str(ROOT / "jinyv_memory" / "core"))))
 sys.path.insert(0, str(CORE_DIR))
 
 from fastapi import FastAPI, Request  # noqa: E402
@@ -84,6 +84,7 @@ load_env_file(_cli("--env-file", os.environ.get("RP_CALL_ENV", "")))
 HOST = _cli("--host", os.environ.get("RP_CALL_HOST", "127.0.0.1"))
 PORT = int(_cli("--port", os.environ.get("RP_CALL_PORT", "8790")))
 DB_PATH = os.environ.get("RP_DB", str(ROOT / "desktop_memory.db"))
+# legacy 契约，勿改：与 QQ 宿主共用同一个 owner 键
 CID = "jinyu"
 BASE_SESSION = (os.environ.get("RP_SESSION") or "local-user").strip()
 # 设了 RP_HOST_BASE + RP_HOST_TOKEN 就走 QQ 进程里的宿主接口，本进程不再碰 SQLite
@@ -236,6 +237,7 @@ ROOM_STYLE = ("（现在在 3D 房间里面对面说话：用口语化的短句�
               "口型由系统随语音驱动，不用你调。）\n")
 
 # ---- M2 舞台控制：服务器 AI 用指令驱动 Live2D ----
+# legacy 契约，勿改：页面资源目录名固定为 models/jinyu/（模型文件不进仓库）
 MODEL_JSON = WEB_DIR / "models" / "jinyu" / "大肥鱼.model3.json"
 MOTION_LABELS = {
     "默认手切举手": "举手",

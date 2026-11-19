@@ -693,6 +693,7 @@
     }, 150);
   }
 
+  // legacy 契约，勿改：screen.js / voice.js 按这个全局名取舞台控制
   window.JinyuStage = {
     apply: applyStage,
     reset: resetExpression,

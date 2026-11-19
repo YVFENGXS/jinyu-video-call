@@ -21,7 +21,7 @@ OFF_VALUES = {"off", "none", "0", "false", "no", "disabled"}
 MAX_RETRY_DELAY = 30.0
 IODUMP_CHARS = 600                     # 单条消息/输出在日志里最多展示这么多字
 OUTPUT_GROW_CAP = 4800                 # 被 finish_reason=length 截断时，最多加到这么多再认命
-logger = logging.getLogger("jinyu_memory.llm")
+logger = logging.getLogger("jinyv_memory.llm")
 
 # ---------- DSML：工具调用被服务商当正文吐出来时的兜底 ----------
 # 部分模型/网关不走标准 tool_calls，而是在正文里写
