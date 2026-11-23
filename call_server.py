@@ -36,6 +36,7 @@ import sys
 import time
 from pathlib import Path
 
+import call_hub
 import call_voice as cv
 import screen_vision as sv
 
@@ -52,7 +53,7 @@ def _cli(flag, default):
 CORE_DIR = Path(_cli("--core-dir", os.environ.get("RP_CORE_DIR", str(ROOT / "jinyv_memory" / "core"))))
 sys.path.insert(0, str(CORE_DIR))
 
-from fastapi import FastAPI, Request  # noqa: E402
+from fastapi import FastAPI, Request, WebSocket, WebSocketDisconnect  # noqa: E402
 from fastapi.middleware.cors import CORSMiddleware  # noqa: E402
 from fastapi.responses import JSONResponse  # noqa: E402
 from fastapi.staticfiles import StaticFiles  # noqa: E402
@@ -872,6 +873,7 @@ def audio_payload(result):
 
 
 APP = FastAPI(title="jinyu M1/M2/M3/M4 call stage")
+HUB = call_hub.Hub()
 
 # M0 预览用的是 8765 的 http.server；页面从那里加载时允许跨到本服务
 APP.add_middleware(
@@ -942,6 +944,7 @@ async def health():
         "modes": ["screen", "camera"],
         "sessions": len(live_sessions()),
         "inbox_ready": len(inbox_ready_sessions()),
+        "presence": HUB.presence(),
         "protocol": "screen-v1+stage+camera",
     }
 
@@ -1021,6 +1024,9 @@ async def vision_ask(request: Request):
         answer, mode_out = fallback_answer(question, reading), "local"
     answer, stage = parse_stage(answer)
     note_stage(sid, stage)
+    if stage:
+        await HUB.broadcast({"type": "stage", "session": sid, "stage": stage,
+                             "ts": time.time()}, roles=("viewer", "panel", "pet"))
     return {"ok": True, "answer": answer, "reading": reading, "mode": mode_out,
             "stage": stage}
 
@@ -1047,6 +1053,8 @@ async def stage_state(request: Request):
         motion = ""
     head = valid_head_text(body.get("head"))
     STAGE_STATE[sid] = {"expressions": names, "motion": motion, "head": head, "ts": time.time()}
+    await HUB.broadcast({"type": "stage.state", "session": sid,
+                         "state": STAGE_STATE[sid]}, roles=("panel", "pet"))
     return {"ok": True, "session": sid, "state": STAGE_STATE[sid]}
 
 
@@ -1204,6 +1212,11 @@ async def call_say(request: Request):
         if len(items) > INBOX_MAX:
             del items[:len(items) - INBOX_MAX]
     ready = len(inbox_ready_sessions())
+    for sid in targets:
+        await HUB.broadcast({"type": "say", "session": sid, "text": text,
+                             "stage": stage, "source": str(body.get("source") or "qq"),
+                             "ts": time.time()},
+                            roles=("viewer", "panel", "pet"), session=sid)
     if not ready:
         # 页面只打 /stage/state 的旧脚本不会来取队列，这条会过期；明确记一笔，别让人以为已经说到
         print("[call] 注意：通话页没在收队列（可能没刷新），这条话可能播不出来",
@@ -1224,6 +1237,51 @@ async def call_inbox(session: str = "local"):
     # 太旧的不要：刷新页面后不该突然播几分钟前的话
     items = [it for it in raw if now - float(it.get("ts") or 0) <= INBOX_TTL]
     return {"ok": True, "items": items, "ts": now}
+
+
+@APP.get("/presence")
+async def presence():
+    """各端在线情况：viewer / panel / pet 各连了几个。"""
+    return {"ok": True, "presence": HUB.presence(), "ts": time.time()}
+
+
+@APP.websocket("/ws")
+async def ws_endpoint(ws: WebSocket):
+    """一个舞台，多端订阅：?role=viewer|panel|pet&token=...&session=..."""
+    token = (ws.query_params.get("token")
+             or ws.headers.get("authorization", "").replace("Bearer ", "")).strip()
+    if not (token and hmac.compare_digest(token, CALL_TOKEN)):
+        await ws.close(code=4001)
+        return
+    role = (ws.query_params.get("role") or "viewer").strip().lower()
+    if role not in call_hub.ROLES:
+        role = "viewer"
+    session = (ws.query_params.get("session") or "").strip()[:64]
+    await ws.accept()
+    HUB.add(ws, role, session)
+    await HUB.send(ws, {"type": "hello", "role": role, "session": session,
+                        "server_time": time.time(), "heartbeat_s": 25,
+                        "roles": list(call_hub.ROLES)})
+    await HUB.broadcast({"type": "presence", "presence": HUB.presence()},
+                        exclude=ws)
+    try:
+        while True:
+            raw = await ws.receive_text()
+            try:
+                msg = json.loads(raw)
+            except ValueError:
+                continue
+            mtype = msg.get("type")
+            if mtype == "ping":
+                await HUB.send(ws, {"type": "pong", "ts": time.time()})
+            elif mtype in ("stage", "say"):
+                # 只转发舞台/说话指令；不转发画面、不转发正文以外的内容
+                await HUB.broadcast(msg, exclude=ws)
+    except Exception:
+        pass
+    finally:
+        HUB.drop(ws)
+        await HUB.broadcast({"type": "presence", "presence": HUB.presence()})
 
 
 APP.mount("/", StaticFiles(directory=str(WEB_DIR), html=True), name="web")

@@ -12,12 +12,14 @@
 - **舞台控制**：模型可用 `[[表情:...]]`、`[[动作:...]]`、`[[转头:左]]`、`[[点头:3]]` 等标记控制表情、动作和头姿。
 - **主动开口**：画面每分钟至少补一帧，AI 根据刚看到的内容决定要不要主动说一句；不想说就回 `[[pass]]`。
 - **跨窗口发话**：QQ/桌宠可通过 `/call/say` 把一句话推到通话页播放。
+- **多端订阅**：`/ws?role=viewer|panel|pet` 用同一条舞台总线；面板跟表情、桌宠收 `say`/`stage`，`/presence` 看各端在线数。
 
 ## 目录
 
 ```
 jinyu-video-call/
 ├── call_server.py          # FastAPI 服务：静态舞台 + 视觉 + 语音 + 舞台状态
+├── call_hub.py             # 舞台 WebSocket 总线（viewer / panel / pet）
 ├── call_voice.py           # ASR / TTS
 ├── screen_vision.py        # 屏幕 / 摄像头画面判读
 ├── jinyv_memory/core/      # 运行所需的记忆核心依赖
@@ -92,6 +94,8 @@ web/live2d/models/jinyu/大肥鱼.model3.json
 | POST | `/stage/state` | 前端上报当前表情/动作/头姿 |
 | GET | `/call/inbox` | 通话页取跨窗口待播的话 |
 | POST | `/call/say` | QQ/桌宠推一句话到通话页 |
+| GET | `/presence` | 各端在线数（viewer / panel / pet） |
+| WS | `/ws?role=&token=&session=` | 舞台总线：`hello` / `ping`→`pong` / `stage` / `say` / `presence` |
 
 ## 隐私
 
