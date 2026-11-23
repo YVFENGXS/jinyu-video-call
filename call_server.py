@@ -50,7 +50,20 @@ def _cli(flag, default):
         return default
 
 
-CORE_DIR = Path(_cli("--core-dir", os.environ.get("RP_CORE_DIR", str(ROOT / "jinyv_memory" / "core"))))
+def _resolve_core() -> Path:
+    """记忆核心不再随本仓分发；优先 --core-dir / RP_CORE_DIR，其次同级主仓。"""
+    explicit = _cli("--core-dir", os.environ.get("RP_CORE_DIR", ""))
+    if explicit:
+        return Path(explicit).expanduser().resolve()
+    sibling = ROOT.parent / "Jinyv-memory" / "jinyv_memory" / "core"
+    if sibling.is_dir():
+        return sibling.resolve()
+    raise SystemExit(
+        "找不到记忆核心。请用 --core-dir 或 RP_CORE_DIR 指向 "
+        "Jinyv-memory/jinyv_memory/core；本仓库不再内置副本。")
+
+
+CORE_DIR = _resolve_core()
 sys.path.insert(0, str(CORE_DIR))
 
 from fastapi import FastAPI, Request, WebSocket, WebSocketDisconnect  # noqa: E402

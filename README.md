@@ -22,16 +22,15 @@ jinyu-video-call/
 ├── call_hub.py             # 舞台 WebSocket 总线（viewer / panel / pet）
 ├── call_voice.py           # ASR / TTS
 ├── screen_vision.py        # 屏幕 / 摄像头画面判读
-├── jinyv_memory/core/      # 运行所需的记忆核心依赖
-│   ├── persona.py          #   人设单源
-│   ├── rp_skeleton.py      #   SQLite 中间件
-│   ├── llm.py              #   OpenAI 兼容客户端
-│   └── ...
 ├── web/live2d/             # 前端舞台（HTML/CSS/JS、背景图、第三方库）
 ├── .env.example
 ├── requirements.txt
 └── LICENSE
 ```
+
+> 记忆核心不随本仓库分发。运行时用 `--core-dir` 或 `RP_CORE_DIR` 指向
+> [Jinyv-memory](https://github.com/YVFENGXS/Jinyv-memory) 的 `jinyv_memory/core`；
+> 未设置时默认查找同级目录 `../Jinyv-memory/jinyv_memory/core`。
 
 ## 运行
 
@@ -109,7 +108,7 @@ web/live2d/models/jinyu/大肥鱼.model3.json
 - Live2D Cubism Core：归 Live2D Inc. 所有，使用需遵守 Live2D 许可。
 - PixiJS：MIT License。
 - pixi-live2d-display：MIT License。
-- **[YVFENGXS/Jinyv-memory](https://github.com/YVFENGXS/Jinyv-memory)** —— `jinyv_memory/core/` 的记忆核心来自该仓库（MIT）；其分层记忆与检索设计参考过 [SeekMemory](https://github.com/NeverENG/SeekMemory) 与 dsh-fish，工程实践参考过 [AstrBot](https://github.com/AstrBotDevs/AstrBot)，均未复制代码。
+- **[YVFENGXS/Jinyv-memory](https://github.com/YVFENGXS/Jinyv-memory)** —— 运行时的记忆核心（`jinyv_memory/core`）由该仓库提供（MIT），本仓不再内置副本；其分层记忆与检索设计参考过 [SeekMemory](https://github.com/NeverENG/SeekMemory) 与 dsh-fish，工程实践参考过 [AstrBot](https://github.com/AstrBotDevs/AstrBot)，均未复制代码。
 - **[opencode-acp](https://github.com/ranxianglei/opencode-acp)**、**[billion-context-pi](https://github.com/ranxianglei/billion-context-pi)**、**[billion-context](https://github.com/ranxianglei/billion-context)** —— 长会话上下文压缩思路参考（模型驱动、增量分层压缩），未复制代码。
 - **DeepSeek-chan（大肥鱼）Live2D 模型** —— 原画 / 拆分：神宫凉子，Live2D 建模：霓虹猫_NeonNeko；模型不随仓库分发，版权与使用条件归原作者。
 
